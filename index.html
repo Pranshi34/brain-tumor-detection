@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Brain Tumor Detection</title>
+</head>
+<body>
+
+<h2>Upload MRI Image</h2>
+
+<form method="POST" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">Predict</button>
+</form>
+
+{% if result %}
+    <h3>Prediction: {{ result }}</h3>
+    <img src="{{ image }}" width="300">
+{% endif %}
+
+</body>
+</html>
