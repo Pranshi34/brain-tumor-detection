@@ -39,8 +39,7 @@ wheels/
 Thumbs.db
 
 # Model and uploads
-*.h5
-*.pkl
+
 *.joblib
 static/uploads/*
 !static/uploads/.gitkeep
