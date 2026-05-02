@@ -6,8 +6,17 @@ import io
 
 app = Flask(__name__)
 
-# Load model once at startup
-model = tf.keras.models.load_model("brain_tumor_model.h5")
+# =========================
+# ✅ SAFE MODEL LOADING FIX
+# =========================
+try:
+    model = tf.keras.models.load_model(
+        "brain_tumor_model.h5",
+        compile=False
+    )
+except Exception as e:
+    print("Model loading failed:", e)
+    model = None
 
 # Class labels
 CLASS_NAMES = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
@@ -21,25 +30,29 @@ def preprocess_image(image_bytes):
     return np.expand_dims(arr, axis=0)
 
 
-# ✅ HOME ROUTE (shows HTML UI)
+# HOME ROUTE
 @app.route("/", methods=["GET"])
 def home():
     return render_template("index.html")
 
 
-# ✅ OPTIONAL: health check API
+# HEALTH CHECK
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "ok",
-        "model": "Brain Tumor Classifier",
+        "model_loaded": model is not None,
         "classes": CLASS_NAMES
     })
 
 
-# ✅ PREDICTION ROUTE
+# PREDICTION ROUTE
 @app.route("/predict", methods=["POST"])
 def predict():
+
+    if model is None:
+        return jsonify({"error": "Model not loaded"}), 500
+
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -50,7 +63,8 @@ def predict():
 
     try:
         img_tensor = preprocess_image(file.read())
-        preds = model.predict(img_tensor)[0]
+
+        preds = model.predict(img_tensor, verbose=0)[0]
 
         predicted_index = int(np.argmax(preds))
         confidence = float(preds[predicted_index])
@@ -68,6 +82,6 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 
-# RUN APP
+# RUN SERVER
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
