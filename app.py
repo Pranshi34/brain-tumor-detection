@@ -3,9 +3,10 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import numpy as np
 import os
+import tf_keras
 
 app = Flask(__name__)
-model = load_model("brain_tumor_model.h5")
+model = tf_keras.models.load_model("brain_tumor_model.h5")
 
 class_name = ['glioma', 'meningioma', 'notumor', 'pituitary']
 
