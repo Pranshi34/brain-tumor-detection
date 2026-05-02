@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 app = Flask(__name__)
-model = load_model("cnn_model.h5")
+model = load_model("brain_tumor_model.h5")
 
 class_name = ['glioma', 'meningioma', 'notumor', 'pituitary']
 
