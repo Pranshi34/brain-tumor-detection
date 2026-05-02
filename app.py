@@ -1,54 +1,73 @@
-from flask import Flask, render_template, request
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from flask import Flask, request, jsonify, render_template
+import tensorflow as tf
 import numpy as np
-import os
+from PIL import Image
+import io
 
 app = Flask(__name__)
 
-# Load model (fixed)
-model = load_model("brain_tumor_model.h5", compile=False)
+# Load model once at startup
+model = tf.keras.models.load_model("brain_tumor_model.h5")
 
-class_name = ['glioma', 'meningioma', 'notumor', 'pituitary']
+# Class labels
+CLASS_NAMES = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
 
-UPLOAD_FOLDER = "static/uploads"
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Ensure upload folder exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+def preprocess_image(image_bytes):
+    """Resize to 256x256 RGB and normalize"""
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = img.resize((256, 256))
+    arr = np.array(img, dtype=np.float32) / 255.0
+    return np.expand_dims(arr, axis=0)
 
-# Prediction function
-def predict_image(path):
+
+# ✅ HOME ROUTE (shows HTML UI)
+@app.route("/", methods=["GET"])
+def home():
+    return render_template("index.html")
+
+
+# ✅ OPTIONAL: health check API
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok",
+        "model": "Brain Tumor Classifier",
+        "classes": CLASS_NAMES
+    })
+
+
+# ✅ PREDICTION ROUTE
+@app.route("/predict", methods=["POST"])
+def predict():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files["file"]
+
+    if file.filename == "":
+        return jsonify({"error": "Empty filename"}), 400
+
     try:
-        img = load_img(path, target_size=(256, 256))  # adjust if needed
-        img = img_to_array(img)
-        img = img / 255.0
-        img = np.expand_dims(img, axis=0)
+        img_tensor = preprocess_image(file.read())
+        preds = model.predict(img_tensor)[0]
 
-        pred = model.predict(img)
-        index = np.argmax(pred)
+        predicted_index = int(np.argmax(preds))
+        confidence = float(preds[predicted_index])
 
-        return class_name[index]
-    
+        return jsonify({
+            "prediction": CLASS_NAMES[predicted_index],
+            "confidence": round(confidence * 100, 2),
+            "all_probabilities": {
+                CLASS_NAMES[i]: round(float(preds[i]) * 100, 2)
+                for i in range(len(CLASS_NAMES))
+            }
+        })
+
     except Exception as e:
-        return str(e)
+        return jsonify({"error": str(e)}), 500
 
-# Route
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "POST":
-        file = request.files.get("file")
 
-        if file and file.filename != "":
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(filepath)
-
-            result = predict_image(filepath)
-
-            return render_template("index.html", result=result, image=filepath)
-
-    return render_template("index.html", result=None)
-
-# Run app
+# RUN APP
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
