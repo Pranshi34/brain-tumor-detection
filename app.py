@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request
-from tensorflow.modelskeras.models import load_model
+from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import numpy as np
 import os
