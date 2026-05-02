@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify, render_template
 import tensorflow as tf
 import numpy as np
@@ -7,27 +8,55 @@ import io
 app = Flask(__name__)
 
 # ==========================================
-# ✅ CLEAN MODEL LOADING (Keras 3)
+# ✅ THE SLEDGEHAMMER COMPATIBILITY FIX
 # ==========================================
+def fixed_load_model(model_path):
+    """
+    Manually strips problematic Keras 3 keywords from the model config 
+    to allow older TensorFlow versions to load it.
+    """
+    try:
+        # 1. First attempt a standard load
+        return tf.keras.models.load_model(model_path, compile=False)
+    except TypeError as e:
+        print(f"Standard load failed, attempting metadata surgery... Error: {e}")
+        
+        # 2. If it fails, we use this bypass:
+        import h5py
+        from tensorflow.keras.layers import deserialize_keras_object
+        
+        # This prevents the specific 'quantization_config' and 'batch_shape' errors
+        def custom_objects_dict():
+            from tensorflow.keras.layers import Dense, InputLayer
+            class CleanDense(Dense):
+                def __init__(self, *args, **kwargs):
+                    kwargs.pop('quantization_config', None)
+                    super().__init__(*args, **kwargs)
+            class CleanInput(InputLayer):
+                def __init__(self, *args, **kwargs):
+                    kwargs.pop('batch_shape', None)
+                    super().__init__(*args, **kwargs)
+            return {'Dense': CleanDense, 'InputLayer': CleanInput}
+
+        return tf.keras.models.load_model(
+            model_path, 
+            custom_objects=custom_objects_dict(), 
+            compile=False
+        )
+
+# LOAD MODEL
 try:
-    print("Loading Keras 3 model... please wait.")
-    # In Keras 3, we don't need custom_objects for standard layers
-    model = tf.keras.models.load_model(
-        "brain_tumor_model.h5",
-        compile=False
-    )
-    print("✅ SUCCESS: Model loaded successfully!")
+    model = fixed_load_model("brain_tumor_model.h5")
+    print("✅ SUCCESS: Model is finally loaded!")
 except Exception as e:
-    print(f"❌ ERROR: Still failing. Details: {e}")
+    print(f"❌ CRITICAL ERROR: Could not load model even with surgery: {e}")
     model = None
 
-CLASS_NAMES = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
+# ==========================================
+# ✅ APP ROUTES
+# ==========================================
 
-def preprocess_image(image_bytes):
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = img.resize((256, 256))
-    arr = np.array(img, dtype=np.float32) / 255.0
-    return np.expand_dims(arr, axis=0)
+CLASS_NAMES = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
 
 @app.route("/", methods=["GET"])
 def home():
@@ -37,23 +66,23 @@ def home():
 def predict():
     if model is None:
         return jsonify({"error": "Model not loaded"}), 500
-    
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
 
     try:
-        img_tensor = preprocess_image(file.read())
+        img = Image.open(io.BytesIO(file.read())).convert("RGB").resize((256, 256))
+        img_tensor = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
+        
         preds = model.predict(img_tensor, verbose=0)[0]
-        predicted_index = int(np.argmax(preds))
+        idx = int(np.argmax(preds))
         
         return jsonify({
-            "prediction": CLASS_NAMES[predicted_index],
-            "confidence": round(float(preds[predicted_index]) * 100, 2)
+            "prediction": CLASS_NAMES[idx],
+            "confidence": round(float(preds[idx]) * 100, 2)
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    # Ensure port 5000 is open in AWS Security Groups!
     app.run(host="0.0.0.0", port=5000, debug=True)
