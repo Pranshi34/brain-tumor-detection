@@ -1,4 +1,4 @@
 flask
-tensorflow = 2.18.0
+tensorflow-cpu
 numpy
 pillow
