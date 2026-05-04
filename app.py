@@ -1,88 +1,67 @@
-import os
-from flask import Flask, request, jsonify, render_template
-import tensorflow as tf
+from flask import Flask, render_template, request
 import numpy as np
-from PIL import Image
-import io
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
+import os
 
 app = Flask(__name__)
 
-# ==========================================
-# ✅ THE SLEDGEHAMMER COMPATIBILITY FIX
-# ==========================================
-def fixed_load_model(model_path):
-    """
-    Manually strips problematic Keras 3 keywords from the model config 
-    to allow older TensorFlow versions to load it.
-    """
-    try:
-        # 1. First attempt a standard load
-        return tf.keras.models.load_model(model_path, compile=False)
-    except TypeError as e:
-        print(f"Standard load failed, attempting metadata surgery... Error: {e}")
-        
-        # 2. If it fails, we use this bypass:
-        import h5py
-        from tensorflow.keras.layers import deserialize_keras_object
-        
-        # This prevents the specific 'quantization_config' and 'batch_shape' errors
-        def custom_objects_dict():
-            from tensorflow.keras.layers import Dense, InputLayer
-            class CleanDense(Dense):
-                def __init__(self, *args, **kwargs):
-                    kwargs.pop('quantization_config', None)
-                    super().__init__(*args, **kwargs)
-            class CleanInput(InputLayer):
-                def __init__(self, *args, **kwargs):
-                    kwargs.pop('batch_shape', None)
-                    super().__init__(*args, **kwargs)
-            return {'Dense': CleanDense, 'InputLayer': CleanInput}
+MODEL_PATH = "brain_tumor_model.h5"
+model = load_model(MODEL_PATH)
 
-        return tf.keras.models.load_model(
-            model_path, 
-            custom_objects=custom_objects_dict(), 
-            compile=False
-        )
+# Print model input shape for debugging
+print("Model input shape:", model.input_shape)
 
-# LOAD MODEL
-try:
-    model = fixed_load_model("brain_tumor_model.h5")
-    print("✅ SUCCESS: Model is finally loaded!")
-except Exception as e:
-    print(f"❌ CRITICAL ERROR: Could not load model even with surgery: {e}")
-    model = None
+IMG_HEIGHT = 128
+IMG_WIDTH = 128
 
-# ==========================================
-# ✅ APP ROUTES
-# ==========================================
+labels = ["glioma", "meningioma", "notumor", "pituitary"]
 
-CLASS_NAMES = ["Glioma", "Meningioma", "No Tumor", "Pituitary"]
+def prepare_image(path):
+    img = image.load_img(path, target_size=(IMG_HEIGHT, IMG_WIDTH))
+    img_array = image.img_to_array(img)
+    
+    # Normalize to [0, 1] range
+    img_array = img_array / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
 
-@app.route("/", methods=["GET"])
+    return img_array
+
+
+@app.route("/")
 def home():
     return render_template("index.html")
 
+
 @app.route("/predict", methods=["POST"])
 def predict():
-    if model is None:
-        return jsonify({"error": "Model not loaded"}), 500
-    file = request.files.get("file")
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
-
     try:
-        img = Image.open(io.BytesIO(file.read())).convert("RGB").resize((256, 256))
-        img_tensor = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
+        file = request.files["file"]
+
+        upload_folder = os.path.join("static", "uploads")
+        os.makedirs(upload_folder, exist_ok=True)
+
+        filepath = os.path.join(upload_folder, file.filename)
+        file.save(filepath)
         
-        preds = model.predict(img_tensor, verbose=0)[0]
-        idx = int(np.argmax(preds))
-        
-        return jsonify({
-            "prediction": CLASS_NAMES[idx],
-            "confidence": round(float(preds[idx]) * 100, 2)
-        })
+
+        img = prepare_image(filepath)
+
+        preds = model.predict(img)
+
+        predicted_class = labels[np.argmax(preds)]
+        confidence = float(np.max(preds))
+
+        return render_template(
+            "index.html",
+            prediction=predicted_class,
+            confidence=f"{confidence*100:.2f}",
+            img_path = filepath.replace("\\", "/")
+        )
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return f"Error: {str(e)}"
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

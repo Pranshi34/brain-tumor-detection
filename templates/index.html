@@ -232,7 +232,7 @@
             <p>AI-Powered MRI Analysis</p>
         </div>
 
-        <form method="POST" enctype="multipart/form-data" id="uploadForm">
+        <form method="POST" action="/predict" enctype="multipart/form-data" id="uploadForm">
             <div class="upload-section">
                 <label class="upload-label">Select MRI Image</label>
                 <div class="file-input-wrapper">
@@ -247,12 +247,15 @@
             <button type="submit" class="submit-btn">Analyze Image</button>
         </form>
 
-        {% if result %}
+        {% if prediction %}
         <div class="result-section active">
             <div class="result-label">Analysis Result</div>
-            <div class="prediction">{{ result }}</div>
+            <div class="prediction">{{ prediction }}</div>
+            <div style="margin-top: 15px; font-size: 1.3em; color: #667eea;">
+                <strong>Confidence: {{ confidence }}%</strong>
+            </div>
             <span class="badge">✓ Classification Complete</span>
-            <img src="{{ image }}" alt="Uploaded MRI" class="result-image">
+            <img src="/{{ img_path }}" alt="Uploaded MRI" class="result-image">
         </div>
         {% endif %}
     </div>
