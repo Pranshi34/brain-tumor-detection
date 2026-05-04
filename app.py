@@ -7,7 +7,7 @@ import os
 app = Flask(__name__)
 
 MODEL_PATH = "brain_tumor_model.h5"
-model = load_model(MODEL_PATH)
+model = load_model(MODEL_PATH, compile=False, safe_mode=False)
 
 # Print model input shape for debugging
 print("Model input shape:", model.input_shape)
